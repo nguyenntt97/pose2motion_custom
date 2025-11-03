@@ -1,0 +1,92 @@
+----------------- Options ---------------
+                    acGAN: 0                             
+                   animal: none                          
+               asymmetric: 1                             	[default: 0]
+                  balance: 0                             
+                batchSize: 128                           
+                    beta1: 0.5                           
+          checkpoints_dir: ./code_release_test/mixamo/   	[default: ./checkpoints]
+         connect_end_site: 0                             
+               constant_A: 0                             
+           continue_train: False                         
+        d_poseeach_weight: 20                            	[default: 10]
+                 dataroot: ./data/                       
+                  dataset: biped                         
+        dataset_subsample: 1.0                           
+                direction: AtoB                          
+                disc_freq: 0                             
+             display_freq: 1000                          	[default: 500]
+             ee_loss_type: height                        	[default: bbox]
+              ee_reweight: 0                             
+              epoch_count: 1                             
+        fix_virtual_bones: 1                             	[default: 0]
+                 gan_mode: wgan-gp                       	[default: lsgan]
+                 gen_freq: 0                             
+                  gpu_ids: 0                             
+              hidden_comm: 64                            	[default: 32]
+           hidden_feature: 256                           
+           hidden_poseall: 128                           	[default: 1024]
+          hidden_poseeach: 64                            	[default: 32]
+            identity_test: 0                             
+                  isTrain: True                          	[default: None]
+                 lambda_A: 1.0                           	[default: 10.0]
+                 lambda_B: 1.0                           	[default: 10.0]
+               lambda_End: 5.0                           	[default: 1]
+       lambda_End_contact: 5.0                           	[default: 1.0]
+    lambda_End_scheduling: 0                             
+      lambda_End_temporal: 100.0                         	[default: 1.0]
+               lambda_GAN: 0.1                           	[default: 1]
+                lambda_gp: 0.1                           	[default: 0]
+          lambda_identity: 0.1                           	[default: 0]
+       lambda_loss_height: 0                             
+             last_sigmoid: 0                             
+               latent_dim: 32                            
+          load_pretrained: 0                             
+                       lr: 0.0001                        
+                   lr_G_A: 0.0001                        	[default: None]
+                   lr_G_B: 0.0001                        	[default: None]
+           lr_decay_iters: 50                            
+                lr_policy: linear                        
+                    model: cycle_gan                     
+                 n_epochs: 20                            	[default: 50]
+           n_epochs_decay: 0                             
+                     name: gwgan-gprrotation_6drrotation_6doAdamb128r0s2s15p20d0g0l1.0l1.0l5.0l0.1l0.1l0.1w64eheighth64h128w1l100.0v1n1l5.0a1t1d1.0	[default: endeffector_all]
+            normalize_all: 1                             	[default: 0]
+normalize_translation_only: 0                             
+             num_joints_A: 27                            
+             num_joints_B: 27                            
+              num_threads: 3                             
+                optimizer: Adam                          
+                  overfit: 0                             
+                partial_A: 1.0                           
+                    phase: train                         
+                pool_size: 20                            	[default: 100]
+       poseall_num_layers: 2                             
+          pretrained_path: /                             
+      remove_virtual_node: 0                             
+                 reweight: 0                             
+         root_translation: 0                             
+                 rotation: rotation_6d                   	[default: quaternion]
+            rotation_data: rotation_6d                   	[default: matrix]
+                 save_bvh: 1000                          
+             save_by_iter: False                         
+          save_epoch_freq: 10                            
+             scale_factor: 2                             
+           skeleton_aware: 1                             
+            skeleton_dist: 2                             
+     skeleton_kernel_size: 15                            	[default: 5]
+      skeleton_num_layers: 2                             
+                   suffix:                               
+   temporal_discriminator: 1                             	[default: 0]
+             use_global_y: 0                             
+              use_gt_stat: 0                             
+          use_mean_height: 0                             
+                use_wandb: False                         
+     v_connect_all_joints: 0                             
+                      vae: False                         
+                   vector: 0                             
+    velocity_virtual_node: 1                             	[default: 0]
+       wandb_project_name: Aj2Mousy                      	[default: MotionAdaptation_heightEE]
+              window_size: 64                            	[default: -1]
+                with_root: 1                             	[default: 0]
+----------------- End -------------------
