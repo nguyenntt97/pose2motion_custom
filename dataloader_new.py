@@ -5,7 +5,7 @@ from sympy.physics.mechanics import joint
 import torch
 from numpy.typing import NDArray
 import numpy as np
-from utils.bvh_utils import ProcessBVH, _calculate_frame_joint_positions_in_local_space, _calculate_frame_joint_positions_in_world_space, _calculate_t_pose
+from utils.bvh_parser import ProcessBVH, _calculate_t_pose
 from torch.nn.utils.rnn import pad_sequence
 
 import torch

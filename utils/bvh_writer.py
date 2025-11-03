@@ -1,8 +1,7 @@
 import sys
-sys.path.append("../utils")
 import numpy as np
-from Quaternions import Quaternions
-from models.skeleton import build_joint_topology
+from utils.Quaternions import Quaternions
+from skeleton_aware.skeleton import build_joint_topology
 
 
 # rotation with shape frame * J * 3

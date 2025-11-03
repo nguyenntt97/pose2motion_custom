@@ -2,8 +2,8 @@ import operator
 
 import numpy as np
 
-import AnimationStructure
-from Quaternions_old import Quaternions
+import utils.AnimationStructure
+from utils.Quaternions_old import Quaternions
 
 class Animation:
     """

@@ -1,11 +1,10 @@
 from torch.utils.data import Dataset
 import os
 import sys
-sys.path.append("../utils")
 import numpy as np
 import torch
-from Quaternions import Quaternions
-from option_parser import get_std_bvh
+from utils.Quaternions import Quaternions
+from utils.option_parser import get_std_bvh
 
 
 class MotionData(Dataset):
@@ -16,7 +15,8 @@ class MotionData(Dataset):
     def __init__(self, args):
         super(MotionData, self).__init__()
         name = args.dataset
-        file_path = './datasets/Mixamo/{}.npy'.format(name)
+        # file_path = './datasets/Mixamo/{}.npy'.format(name)
+        file_path = name
 
         if args.debug:
             file_path = file_path[:-4] + '_debug' + file_path[-4:]

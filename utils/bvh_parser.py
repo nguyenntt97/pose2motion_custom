@@ -1,9 +1,8 @@
 import sys
 import torch
-sys.path.append("../utils")
-import BVH_mod as BVH
+import utils.BVH_mod as BVH
 import numpy as np
-from Quaternions import Quaternions
+from utils.Quaternions import Quaternions
 from skeleton_aware.Kinematics import ForwardKinematics
 from skeleton_aware.skeleton import build_edge_topology
 from utils.option_parser import get_std_bvh
@@ -63,7 +62,7 @@ class BVH_file:
                 self._names[i] = name
             
         if 'SKEL_L_Forearm' in self._names:
-            self.skeleton_type = 1
+            self.skeleton_type = 0
 
         """
         4. 
