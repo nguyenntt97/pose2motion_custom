@@ -1,40 +1,43 @@
+from pathlib import Path
 from torch.utils.data import Dataset
 import os
 import sys
 import numpy as np
 import torch
 from utils.Quaternions import Quaternions
-from utils.option_parser import get_std_bvh
-
+from torch.nn.utils.rnn import pad_sequence
 
 class MotionData(Dataset):
     """
     Clip long dataset into fixed length window for batched training
     each data is a 2d tensor with shape (Joint_num*3) * Time
     """
-    def __init__(self, args):
+    def __init__(self, data_path: Path, # /adult_dog/coyote
+                 normalization: int = 1, 
+                 data_augment: int = 0, 
+                 window_size: int = 64,
+                 step_size: int = 8):
         super(MotionData, self).__init__()
-        name = args.dataset
-        # file_path = './datasets/Mixamo/{}.npy'.format(name)
-        file_path = name
+        self.data_augment: int = data_augment
+        self.normalization: int = normalization
+        self.data_path: Path = data_path
+        self.window_size: int = window_size
+        
+        motion_path = data_path.parent / (data_path.name + ".npy")
 
-        if args.debug:
-            file_path = file_path[:-4] + '_debug' + file_path[-4:]
-
-        print('load from file {}'.format(file_path))
+        print('load from file {}'.format(motion_path))
         self.total_frame = 0
-        self.std_bvh = get_std_bvh(args)
-        self.args = args
-        self.data = []
+        self.std_bvh = MotionData._get_std_bvh(data_path)
+        
         self.motion_length = []
-        motions = np.load(file_path, allow_pickle=True)
-        motions = list(motions)
-        new_windows = self.get_windows(motions)
-        self.data.append(new_windows)
-        self.data = torch.cat(self.data)
-        self.data = self.data.permute(0, 2, 1)
+        
+        motions = np.load(motion_path, allow_pickle=True)  # list of (L, J, 3)
+        self.data, self.window_idx = self._window(
+                                    motions, 
+                                    window_size=window_size, 
+                                    step_size=step_size)
 
-        if args.normalization == 1:
+        if normalization == 1:
             self.mean = torch.mean(self.data, (0, 2), keepdim=True)
             self.var = torch.var(self.data, (0, 2), keepdim=True)
             self.var = self.var ** (1/2)
@@ -46,64 +49,52 @@ class MotionData(Dataset):
             self.mean.zero_()
             self.var = torch.ones_like(self.mean)
 
-        train_len = self.data.shape[0] * 95 // 100
-        self.test_set = self.data[train_len:, ...]
-        self.data = self.data[:train_len, ...]
-        self.data_reverse = torch.tensor(self.data.numpy()[..., ::-1].copy())
+        # train_len = self.data.shape[0] * 95 // 100
+        # self.test_set = self.data[train_len:, ...]
+        # self.data = self.data[:train_len, ...]
+        # self.data_reverse = torch.tensor(self.data.numpy()[..., ::-1].copy())
 
-        self.reset_length_flag = 0
-        self.virtual_length = 0
+        # self.reset_length_flag = 0
+        # self.virtual_length = 0
         print('Window count: {}, total frame (without downsampling): {}'.format(len(self), self.total_frame))
+
+    def _get_std_bvh(bvh_parent: Path):
+        # same sibling `std_bvhs` folder
+        std_bvh_path = bvh_parent.parent / "std_bvhs" / f"{bvh_parent.name}.bvh"
+        print("Standardized BVH path:", std_bvh_path)
+        return std_bvh_path
 
     def reset_length(self, length):
         self.reset_length_flag = 1
         self.virtual_length = length
 
     def __len__(self):
-        if self.reset_length_flag:
-            return self.virtual_length
-        else:
-            return self.data.shape[0]
+        return self.data.shape[0]
 
     def __getitem__(self, item):
-        if isinstance(item, int): item %= self.data.shape[0]
-        if self.args.data_augment == 0 or np.random.randint(0, 2) == 0:
-            return self.data[item]
-        else:
-            return self.data_reverse[item]
+        return self.data[item]
+    
+    def _window(self, motions, window_size: int, step_size: int):
+        original_lengths = torch.tensor([len(pose) for pose in motions])
+        
+        padded_seqs = pad_sequence(
+            [torch.from_numpy(m.astype(np.float32)) for m in motions],
+            batch_first=True,
+            padding_value=0.0
+        ) # (N, L_max, J, 3), padded with zeros
 
-    def get_windows(self, motions):
-        new_windows = []
-
-        for motion in motions:
-            motion = motion.astype(np.float32)
-            self.total_frame += motion.shape[0]
-            motion = self.subsample(motion)
-            self.motion_length.append(motion.shape[0])
-            step_size = self.args.window_size // 2
-            window_size = step_size * 2
-            n_window = motion.shape[0] // step_size - 1
-            for i in range(n_window):
-                begin = i * step_size
-                end = begin + window_size
-
-                new = motion[begin:end, :]
-                if self.args.rotation == 'quaternion':
-                    new = new.reshape(new.shape[0], -1, 3)
-                    rotations = new[:, :-1, :]
-                    rotations = Quaternions.from_euler(np.radians(rotations)).qs
-                        
-                    rotations = rotations.reshape(rotations.shape[0], -1)
-                    positions = new[:, -1, :]
-                    positions = np.concatenate((new, np.zeros((new.shape[0], new.shape[1], 1))), axis=2)
-                    new = np.concatenate((rotations, new[:, -1, :].reshape(new.shape[0], -1)), axis=1)
-
-                new = new[np.newaxis, ...]
-
-                new_window = torch.tensor(new, dtype=torch.float32)
-                new_windows.append(new_window)
-
-        return torch.cat(new_windows)
+        unfolded_windows = padded_seqs.unfold(1, window_size, step_size) # (N, L_max, J, 3) -> (N, num_windows, window_size, J, 3)
+        orig_ids = torch.arange(len(motions)).unsqueeze(1).repeat(1, unfolded_windows.shape[1]) # (N * num_windows,)
+        
+        valid_num = ((original_lengths - window_size) // step_size) + 1
+        valid_num = valid_num.clamp(min=0) # if seq_len < window_size
+        padded_window_num = unfolded_windows.shape[1]
+        
+        mask = (torch.arange(padded_window_num)[None, :] < valid_num[:, None]) # (N, padded_window_num)
+        valid_windows = unfolded_windows[mask] # (total_valid_windows, window_size, J, 3)
+        orig_ids = orig_ids[mask] # (total_valid_windows,)
+        
+        return valid_windows, orig_ids # N, W, J, 3
 
     def subsample(self, motion):
         return motion[::2, :]
