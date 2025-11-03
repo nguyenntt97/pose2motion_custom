@@ -76,8 +76,8 @@ class BVH_file:
             print(self._names)
             raise Exception('Unknown skeleton')
 
-        if self.skeleton_type == 0:
-            self.set_new_root(1)
+        # if self.skeleton_type == 0:
+        #     self.set_new_root(1)
 
         self.details = [i for i, name in enumerate(self._names) if name not in corps_names[self.skeleton_type]]
         self.joint_num = self.anim.shape[1]

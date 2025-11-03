@@ -1,5 +1,6 @@
 from dataclasses import dataclass
 from pathlib import Path
+from functorch import einops
 from sympy import root
 from sympy.logic.inference import valid
 from sympy.physics.mechanics import joint
@@ -48,8 +49,10 @@ class ExtendedAinoZooInfo(AinoZooInfo): # extended info from AinoZooInfo
     def __init__(self, **kwargs):
         super().__init__(**kwargs)
 
-        self.virtual_mask = np.ones((1, len(self.joint_names), 3), dtype=np.float32)
+        self.virtual_mask = np.ones((1, len(self.joint_names), 6), dtype=np.float32)
         self.virtual_mask[0, self.pose_virtual_index, :] = 0.0
+        
+        self.pose_virtual_val = torch.zeros((1, len(self.joint_names), 6), dtype=torch.float32)
         
         self.foot_height = self.t_pose[self.end_sites[3], 1] # y-axis is up
         self.legs_lengths = self.get_height(self.end_sites, self.joint_parents_idx_full, self.joint_offsets)
@@ -67,7 +70,7 @@ class ExtendedAinoZooInfo(AinoZooInfo): # extended info from AinoZooInfo
             height = 0
             while p!=0:
                 height += np.dot(offset[p],offset[p])**0.5
-                p = parent_list[p-1]
+                p = parent_list[p]
             height_list.append(height)
         return height_list
 
@@ -95,7 +98,7 @@ class AinoZoo(torch.utils.data.Dataset):
 
 
     def __len__(self):
-        return len(self.windowed_poses)
+        return len(self.poses)
     
     # def _get_std_bvh(bvh_path: Path):
     #     # same sibling `std_bvhs` folder
@@ -115,7 +118,6 @@ class AinoZoo(torch.utils.data.Dataset):
 
         sub_dirs = [d for d in self.dataset_path.iterdir() if d.is_dir()]
         # sub_dir is label
-        total_N: int = 0
         for sub_dir in sub_dirs:
             label = sub_dir.name
             if label not in self.class_names:
@@ -132,7 +134,9 @@ class AinoZoo(torch.utils.data.Dataset):
                 motion_data = MotionData(data_path=subject)
                 bvh_file = BVH_file(motion_data.std_bvh)
                 topology = list(bvh_file.topology)
-                poses = motion_data.data.reshape(motion_data.data.shape[0], -1, 3) # (N, J, 3)
+                poses = motion_data.data.clone() # *N, J*3, T)
+                N, J3, T = poses.shape
+                poses = poses.permute(0, 2, 1).reshape(-1, J3 // 3, 3) # (N*T, J, 3)
                 
                 if self.use_velo_virtual_node:
                     root_velo = torch.zeros_like(poses[:, 0, :]) # (N, 1, 3)
@@ -148,6 +152,8 @@ class AinoZoo(torch.utils.data.Dataset):
                 if self.use_velo_virtual_node:
                     pose_virtual_index = [pose_virtual_index[0][:-1]] # exclude the last virtual joint (root velocity)
                 
+                
+                poses = self._to_rotation_6d(poses).reshape(N, T, -1, 6) # (N*T, J, 6)
                 info = ExtendedAinoZooInfo(
                     joint_parents_idx=topology,
                     joint_parents_idx_full=topology,
@@ -160,7 +166,7 @@ class AinoZoo(torch.utils.data.Dataset):
                     pose_virtual_index=pose_virtual_index,
                 )
                 self.infos.append(info)
-                self.poses.append(poses)
+                self.poses.append(poses) # (N, J, 3) -> (N, J, 6)
             
             # for f in bvh_files:
             #     breed: str = f.parent.name
@@ -234,8 +240,8 @@ class AinoZoo(torch.utils.data.Dataset):
             #     new_info_raw.pose_virtual_val = pose_virtual_val
                 
             #     self.infos.append(new_info_raw)
-        
-        self.poses = torch.cat(self.poses, dim=0) # (total_N, J, 3)                
+
+        self.poses = einops.rearrange(torch.cat(self.poses, dim=0), 'N T J C -> N (J C) T')
         self.total_frames = self.poses.shape[0]
         
         # windowing
@@ -298,7 +304,7 @@ class AinoZoo(torch.utils.data.Dataset):
         # info = self.infos[idx]
         # label = self.labels[idx]
         # file_path = self.file_paths[idx]
-        windows = self.windowed_poses
+        windows = self.poses
         # window_ids = self.windowed_ids
         # window_info = self.infos[window_ids[idx]]
         
