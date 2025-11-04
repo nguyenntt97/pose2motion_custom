@@ -60,164 +60,165 @@ class EndEffectorLoss(nn.Module):
 
     def __call__(self,poseA, poseB, infoA, infoB,temporal=False,root_translation=False,mean_A=None,var_A=None):
         
-        poseA = poseA.clone()
-        poseB = poseB.clone()
+        # poseA = poseA.clone()
+        # poseB = poseB.clone()
 
-        if self.window_size>0:
-            self.window_size = poseA.shape[3]
-            poseA = poseA.permute(0,3,1,2).reshape([-1,poseA.shape[1],poseA.shape[2]])
-            poseB = poseB.permute(0,3,1,2).reshape([-1,poseB.shape[1],poseB.shape[2]])
-        if self.dataset.normalize_all:
-            poseA = self.dataset.denormalize(poseA,type="A")
-            poseB = self.dataset.denormalize(poseB,type="B")
-        if self.velocity_virtual_node:
-            root_v_A = poseA[:,-1,:3].clone()
-            root_v_B = poseB[:,-1,:3].clone()
-            poseA[:,-1,:] = torch.eye(3).cuda().reshape(-1)[:6]
-            poseB[:,-1,:] = torch.eye(3).cuda().reshape(-1)[:6]
-            if self.use_global_y:
-                root_v_A[:,[0,2]] = root_v_A[:,[0,2]].cumsum(dim=0)
-                root_v_B[:,[0,2]] = root_v_B[:,[0,2]].cumsum(dim=0)  
-            else:
-                root_v_A = root_v_A.cumsum(dim=0)
-                root_v_B = root_v_B.cumsum(dim=0)
+        # if self.window_size>0:
+        #     self.window_size = poseA.shape[3]
+        #     poseA = poseA.permute(0,3,1,2).reshape([-1,poseA.shape[1],poseA.shape[2]])
+        #     poseB = poseB.permute(0,3,1,2).reshape([-1,poseB.shape[1],poseB.shape[2]])
+        # # if self.datasetA.normalize_all: # disable normalization for now
+        # #     poseA = self.dataset.denormalize(poseA,type="A")
+        # #     poseB = self.dataset.denormalize(poseB,type="B")
+        # if self.velocity_virtual_node:
+        #     root_v_A = poseA[:,-1,:3].clone()
+        #     root_v_B = poseB[:,-1,:3].clone()
+        #     poseA[:,-1,:] = torch.eye(3).cuda().reshape(-1)[:6]
+        #     poseB[:,-1,:] = torch.eye(3).cuda().reshape(-1)[:6]
+        #     if self.use_global_y:
+        #         root_v_A[:,[0,2]] = root_v_A[:,[0,2]].cumsum(dim=0)
+        #         root_v_B[:,[0,2]] = root_v_B[:,[0,2]].cumsum(dim=0)  
+        #     else:
+        #         root_v_A = root_v_A.cumsum(dim=0)
+        #         root_v_B = root_v_B.cumsum(dim=0)
   
-        if self.remove_virtual_node:
-            poseA = to_full_joint(poseA,infoA['remain_index'][0],infoA['pose_virtual_index'][0][0],infoA['pose_virtual_val'][0])
-            poseB = to_full_joint(poseB,infoB['remain_index'][0],infoB['pose_virtual_index'][0][0],infoB['pose_virtual_val'][0])
-        if root_translation:
-            poseA = to_matrix(poseA[:,:,:-3])
-            poseB = to_matrix(poseB[:,:,:-3])
-        else:
-            poseA = to_matrix(poseA)
-            poseB = to_matrix(poseB)
-        if self.with_root:
-            # set root rotation be identity
-            poseA_root = poseA[:,0,:].clone()
-            poseB_root = poseB[:,0,:].clone()
-            poseA[:,0,:] = torch.eye(3).cuda().reshape(-1) #time x num_joints x 9
-            poseB[:,0,:] = torch.eye(3).cuda().reshape(-1)
+        # if self.remove_virtual_node:
+        #     poseA = to_full_joint(poseA,infoA['remain_index'][0],infoA['pose_virtual_index'][0][0],infoA['pose_virtual_val'][0])
+        #     poseB = to_full_joint(poseB,infoB['remain_index'][0],infoB['pose_virtual_index'][0][0],infoB['pose_virtual_val'][0])
+        # if root_translation:
+        #     poseA = to_matrix(poseA[:,:,:-3])
+        #     poseB = to_matrix(poseB[:,:,:-3])
+        # else:
+        #     poseA = to_matrix(poseA)
+        #     poseB = to_matrix(poseB)
+        # if self.with_root:
+        #     # set root rotation be identity
+        #     poseA_root = poseA[:,0,:].clone()
+        #     poseB_root = poseB[:,0,:].clone()
+        #     poseA[:,0,:] = torch.eye(3).cuda().reshape(-1) #time x num_joints x 9
+        #     poseB[:,0,:] = torch.eye(3).cuda().reshape(-1)
         
             
-        bs = poseA.shape[0]
-        joint_offsets = infoA['joint_offsets'].cuda()
-        joint_parents_idx = infoA['joint_parents_idx_full'][0]
-        end_sites = infoA['end_sites'][0]
-        t_poseA = infoA['T_pose'][0].cuda()
-        if self.loss_type=="bbox":
-            scale_A = torch.max(t_poseA,dim=0)[0]-torch.min(t_poseA,dim=0)[0]
-        elif self.loss_type.startswith("height"):
-            scale_A = infoA['height_list'][0][:,None].cuda()
+        # bs = poseA.shape[0]
+        # joint_offsets = infoA['joint_offsets'].cuda()[None, ...]
+        # joint_parents_idx = infoA['joint_parents_idx_full']
+        # end_sites = infoA['end_sites'][0]
+        # t_poseA = infoA['t_pose'].cuda()
+        # if self.loss_type=="bbox":
+        #     scale_A = torch.max(t_poseA,dim=0)[0]-torch.min(t_poseA,dim=0)[0]
+        # elif self.loss_type.startswith("height"):
+        #     # scale_A = infoA['legs_lengths'][0][:,None].cuda()
+        #     scale_A = 1.0
 
-        if self.window_size>0:
-            joint_offsets = joint_offsets.unsqueeze(1).repeat([1,self.window_size,1,1])
-            joint_offsets = joint_offsets.reshape([-1,joint_offsets.shape[2],joint_offsets.shape[3]])
+        # if self.window_size>0:
+        #     joint_offsets = joint_offsets.unsqueeze(1).repeat([poseA.shape[0],self.window_size,1,1])
+        #     joint_offsets = joint_offsets.reshape([-1,joint_offsets.shape[2],joint_offsets.shape[3]])
 
-        _joint_position_A, _ = _recompute_joint_global_info(poseA.clone(), joint_parents_idx, joint_offsets)
-        joint_end_site_A = _joint_position_A[:, end_sites, :].clone()
-        t_pose_end_site_A = t_poseA[end_sites, :].clone()
-        if self.with_root:
-            joint_end_site_A_withroot = torch.bmm(poseA_root.repeat(len(end_sites),1).reshape(-1,3,3),joint_end_site_A.reshape(-1,3,1)).reshape(bs,-1,3).clone()
+        # _joint_position_A, _ = _recompute_joint_global_info(poseA.clone(), joint_parents_idx, joint_offsets)
+        # joint_end_site_A = _joint_position_A[:, end_sites, :].clone()
+        # t_pose_end_site_A = t_poseA[end_sites, :].clone()
+        # if self.with_root:
+        #     joint_end_site_A_withroot = torch.bmm(poseA_root.repeat(len(end_sites),1).reshape(-1,3,3),joint_end_site_A.reshape(-1,3,1)).reshape(bs,-1,3).clone()
 
-        joint_offsets = infoB['joint_offsets']
-        if self.window_size>0:
-            joint_offsets = joint_offsets.unsqueeze(1).repeat([1,self.window_size,1,1])
-            joint_offsets = joint_offsets.reshape([-1,joint_offsets.shape[2],joint_offsets.shape[3]])
+        # joint_offsets = infoB['joint_offsets']
+        # if self.window_size>0:
+        #     joint_offsets = joint_offsets.unsqueeze(1).repeat([1,self.window_size,1,1])
+        #     joint_offsets = joint_offsets.reshape([-1,joint_offsets.shape[2],joint_offsets.shape[3]])
 
-        joint_parents_idx = infoB['joint_parents_idx_full'][0].cuda()
-        end_sites = infoB['end_sites'][0]
-        t_poseB = infoB['T_pose'][0].cuda()
-        if self.loss_type=="bbox":
-            scale_B = torch.max(t_poseB,dim=0)[0]-torch.min(t_poseB,dim=0)[0]
-        elif self.loss_type.startswith("height"):
-            scale_B = infoB['height_list'][0][:,None].cuda()
+        # joint_parents_idx = infoB['joint_parents_idx_full'].cuda()
+        # end_sites = infoB['end_sites'][0]
+        # t_poseB = infoB['T_pose'][0].cuda()
+        # if self.loss_type=="bbox":
+        #     scale_B = torch.max(t_poseB,dim=0)[0]-torch.min(t_poseB,dim=0)[0]
+        # elif self.loss_type.startswith("height"):
+        #     scale_B = infoB['height_list'][0][:,None].cuda()
         
 
-        _joint_position_B, _ = _recompute_joint_global_info(poseB.clone(), joint_parents_idx, joint_offsets)
-        joint_end_site_B = _joint_position_B[:, end_sites, :].clone()
-        t_pose_end_site_B = t_poseB[end_sites, :].clone()
-        if self.with_root:
-            joint_end_site_B_withroot = torch.bmm(poseB_root.repeat(len(end_sites),1).reshape(-1,3,3),joint_end_site_B.reshape(-1,3,1)).reshape(bs,-1,3).clone()
-        #loss is l1 norm of end site different each normalized by scale
-        if self.loss_type == "height_reweight":
-            scale_A[1:-1] = scale_A[1:-1].mean()
-            scale_B[1:-1] = scale_B[1:-1].mean()
-        # if self.ee_reweight:
-        #     scale_A = scale_A/self.dataset.ee_reweight
-        #     scale_B = scale_B/self.dataset.ee_reweight
+        # _joint_position_B, _ = _recompute_joint_global_info(poseB.clone(), joint_parents_idx, joint_offsets)
+        # joint_end_site_B = _joint_position_B[:, end_sites, :].clone()
+        # t_pose_end_site_B = t_poseB[end_sites, :].clone()
+        # if self.with_root:
+        #     joint_end_site_B_withroot = torch.bmm(poseB_root.repeat(len(end_sites),1).reshape(-1,3,3),joint_end_site_B.reshape(-1,3,1)).reshape(bs,-1,3).clone()
+        # #loss is l1 norm of end site different each normalized by scale
+        # if self.loss_type == "height_reweight":
+        #     scale_A[1:-1] = scale_A[1:-1].mean()
+        #     scale_B[1:-1] = scale_B[1:-1].mean()
+        # # if self.ee_reweight:
+        # #     scale_A = scale_A/self.dataset.ee_reweight
+        # #     scale_B = scale_B/self.dataset.ee_reweight
         
         
-        loss_relative_to_T = (((joint_end_site_A-t_pose_end_site_A)/scale_A - (joint_end_site_B-t_pose_end_site_B)/scale_B)**2).mean()
-        if temporal:
-            if self.with_root: # True in train_opt
-                if self.velocity_virtual_node:
+        # loss_relative_to_T = (((joint_end_site_A-t_pose_end_site_A)/scale_A - (joint_end_site_B-t_pose_end_site_B)/scale_B)**2).mean()
+        # if temporal:
+        #     if self.with_root: # True in train_opt
+        #         if self.velocity_virtual_node:
 
-                    '''
-                    xx= (joint_end_site_B_withroot+root_v_B[:,None,:]).reshape([-1,self.window_size,joint_end_site_B_withroot.shape[1],joint_end_site_B_withroot.shape[2]])
-                    xx = joint_end_site_B_withroot
-                    contact = foot_contact(xx[:,:,1:-1,:].clone(),threshold=0.4)
-                    a1 = torch.where(contact[:,:,0]==1)
-                    min1 = (xx[a1[0],a1[1],1,1].min())
-                    a2 = torch.where(contact[:,:,1]==1)
-                    min2 = (xx[a1[0],a1[1],2,1].min())
-                    a3 = torch.where(contact[:,:,2]==1)
-                    min3 = (xx[a1[0],a1[1],3,1].min())
-                    a4 = torch.where(contact[:,:,3]==1)
-                    min4 = (xx[a1[0],a1[1],4,1].min())
-                    print(min1,min2,min3,min4)
+        #             '''
+        #             xx= (joint_end_site_B_withroot+root_v_B[:,None,:]).reshape([-1,self.window_size,joint_end_site_B_withroot.shape[1],joint_end_site_B_withroot.shape[2]])
+        #             xx = joint_end_site_B_withroot
+        #             contact = foot_contact(xx[:,:,1:-1,:].clone(),threshold=0.4)
+        #             a1 = torch.where(contact[:,:,0]==1)
+        #             min1 = (xx[a1[0],a1[1],1,1].min())
+        #             a2 = torch.where(contact[:,:,1]==1)
+        #             min2 = (xx[a1[0],a1[1],2,1].min())
+        #             a3 = torch.where(contact[:,:,2]==1)
+        #             min3 = (xx[a1[0],a1[1],3,1].min())
+        #             a4 = torch.where(contact[:,:,3]==1)
+        #             min4 = (xx[a1[0],a1[1],4,1].min())
+        #             print(min1,min2,min3,min4)
         
-                    '''
-                    joint_end_site_A_withroot_local = joint_end_site_A_withroot.clone().reshape([-1,self.window_size,joint_end_site_A_withroot.shape[1],joint_end_site_A_withroot.shape[2]])
-                    joint_end_site_A_withroot = (joint_end_site_A_withroot+root_v_A[:,None,:]).reshape([-1,self.window_size,joint_end_site_A_withroot.shape[1],joint_end_site_A_withroot.shape[2]])
-                    joint_end_site_B_withroot_local = joint_end_site_B_withroot.clone().reshape([-1,self.window_size,joint_end_site_B_withroot.shape[1],joint_end_site_B_withroot.shape[2]])
-                    joint_end_site_B_withroot = (joint_end_site_B_withroot+root_v_B[:,None,:]).reshape([-1,self.window_size,joint_end_site_B_withroot.shape[1],joint_end_site_B_withroot.shape[2]])
-                    loss_relative_temporal = (((joint_end_site_A_withroot[:,:-1,:]-joint_end_site_A_withroot[:,1:,:])/scale_A - (joint_end_site_B_withroot[:,:-1,:]-joint_end_site_B_withroot[:,1:,:])/scale_B)**2).mean()
+        #             '''
+        #             joint_end_site_A_withroot_local = joint_end_site_A_withroot.clone().reshape([-1,self.window_size,joint_end_site_A_withroot.shape[1],joint_end_site_A_withroot.shape[2]])
+        #             joint_end_site_A_withroot = (joint_end_site_A_withroot+root_v_A[:,None,:]).reshape([-1,self.window_size,joint_end_site_A_withroot.shape[1],joint_end_site_A_withroot.shape[2]])
+        #             joint_end_site_B_withroot_local = joint_end_site_B_withroot.clone().reshape([-1,self.window_size,joint_end_site_B_withroot.shape[1],joint_end_site_B_withroot.shape[2]])
+        #             joint_end_site_B_withroot = (joint_end_site_B_withroot+root_v_B[:,None,:]).reshape([-1,self.window_size,joint_end_site_B_withroot.shape[1],joint_end_site_B_withroot.shape[2]])
+        #             loss_relative_temporal = (((joint_end_site_A_withroot[:,:-1,:]-joint_end_site_A_withroot[:,1:,:])/scale_A - (joint_end_site_B_withroot[:,:-1,:]-joint_end_site_B_withroot[:,1:,:])/scale_B)**2).mean()
                     
-                    joint_end_site_B_withroot_norm = (joint_end_site_B_withroot[:,:,self.datasetA.foot_index,:].clone())/self.datasetB.height
-                    contact = foot_contact(joint_end_site_B_withroot_norm,threshold=self.datasetA.threshold)
-                    velo_A = velocity(joint_end_site_A_withroot[:,:,self.datasetA.foot_index,:].clone(),padding=True)
+        #             joint_end_site_B_withroot_norm = (joint_end_site_B_withroot[:,:,self.datasetA.foot_index,:].clone())/self.datasetB.height
+        #             contact = foot_contact(joint_end_site_B_withroot_norm,threshold=self.datasetA.threshold)
+        #             velo_A = velocity(joint_end_site_A_withroot[:,:,self.datasetA.foot_index,:].clone(),padding=True)
                     
-                    if contact.sum()>0:
-                        # in some version of dog training. no devided by contact
-                        # loss_contact = (contact.clone().detach()*velo_A/(scale_A[self.dataset.foot_index,:].mean())).sum()/contact.sum()
-                        if self.datasetA.animal=="horse":
-                            loss_contact = (contact.clone().detach()*velo_A).sum()/contact.sum()
-                        else:
-                            loss_contact = (contact.clone().detach()*velo_A/scale_A[None,None,self.datasetA.foot_index,0]).sum()/contact.sum()
-                    else:
-                        loss_contact = 0
-                    contact_index = torch.where(contact==1)
-                    height_contact_B = joint_end_site_B_withroot_local[:,:,self.datasetA.foot_index,:][contact_index[0],contact_index[1],contact_index[2],1].clone().detach()
-                    weight = ((height_contact_B<self.foot_height_B)*1).detach() # weight = (loss_height_contact_B<5)*1
-                    height_contact = joint_end_site_A_withroot_local[:,:,self.datasetA.foot_index,:][contact_index[0],contact_index[1],contact_index[2],1].clone()
-                    if self.use_mean_height:
-                        self.foot_height_A = height_contact[weight==1].mean()
-                    if weight.sum()>0:
-                        if self.datasetA.animal=="horse":
-                            loss_height_contact = (weight*(torch.nn.functional.relu(height_contact-(torch.ones_like(height_contact,device=height_contact.device)*self.foot_height_A).detach()))**2).sum()/weight.sum()
-                        else:
-                            loss_height_contact = ((weight*(torch.nn.functional.relu(height_contact-(torch.ones_like(height_contact,device=height_contact.device)*self.foot_height_A).detach()))**2)/scale_A[None,None,self.datasetA.foot_index,0].mean()).sum()/weight.sum()
-                    else:
-                        loss_height_contact = 0
+        #             if contact.sum()>0:
+        #                 # in some version of dog training. no devided by contact
+        #                 # loss_contact = (contact.clone().detach()*velo_A/(scale_A[self.dataset.foot_index,:].mean())).sum()/contact.sum()
+        #                 if self.datasetA.animal=="horse":
+        #                     loss_contact = (contact.clone().detach()*velo_A).sum()/contact.sum()
+        #                 else:
+        #                     loss_contact = (contact.clone().detach()*velo_A/scale_A[None,None,self.datasetA.foot_index,0]).sum()/contact.sum()
+        #             else:
+        #                 loss_contact = 0
+        #             contact_index = torch.where(contact==1)
+        #             height_contact_B = joint_end_site_B_withroot_local[:,:,self.datasetA.foot_index,:][contact_index[0],contact_index[1],contact_index[2],1].clone().detach()
+        #             weight = ((height_contact_B<self.foot_height_B)*1).detach() # weight = (loss_height_contact_B<5)*1
+        #             height_contact = joint_end_site_A_withroot_local[:,:,self.datasetA.foot_index,:][contact_index[0],contact_index[1],contact_index[2],1].clone()
+        #             if self.use_mean_height:
+        #                 self.foot_height_A = height_contact[weight==1].mean()
+        #             if weight.sum()>0:
+        #                 if self.datasetA.animal=="horse":
+        #                     loss_height_contact = (weight*(torch.nn.functional.relu(height_contact-(torch.ones_like(height_contact,device=height_contact.device)*self.foot_height_A).detach()))**2).sum()/weight.sum()
+        #                 else:
+        #                     loss_height_contact = ((weight*(torch.nn.functional.relu(height_contact-(torch.ones_like(height_contact,device=height_contact.device)*self.foot_height_A).detach()))**2)/scale_A[None,None,self.datasetA.foot_index,0].mean()).sum()/weight.sum()
+        #             else:
+        #                 loss_height_contact = 0
                  
-                else:
-                    joint_end_site_A_withroot = joint_end_site_A_withroot.reshape([-1,self.window_size,joint_end_site_A_withroot.shape[1],joint_end_site_A_withroot.shape[2]])
-                    joint_end_site_B_withroot = joint_end_site_B_withroot.reshape([-1,self.window_size,joint_end_site_B_withroot.shape[1],joint_end_site_B_withroot.shape[2]])
-                    loss_relative_temporal = (((joint_end_site_A_withroot[:,:-1,:]-joint_end_site_A_withroot[:,1:,:])/scale_A - (joint_end_site_B_withroot[:,:-1,:]-joint_end_site_B_withroot[:,1:,:])/scale_B)**2).mean()
-                    loss_contact = 0
-                    loss_height_contact = 0
-            else:
-                loss_relative_temporal = 0
-                loss_contact = 0
-                loss_height_contact = 0
-        else:
-            loss_relative_temporal = 0
-            loss_contact = 0
-            loss_height_contact = 0
+        #         else:
+        #             joint_end_site_A_withroot = joint_end_site_A_withroot.reshape([-1,self.window_size,joint_end_site_A_withroot.shape[1],joint_end_site_A_withroot.shape[2]])
+        #             joint_end_site_B_withroot = joint_end_site_B_withroot.reshape([-1,self.window_size,joint_end_site_B_withroot.shape[1],joint_end_site_B_withroot.shape[2]])
+        #             loss_relative_temporal = (((joint_end_site_A_withroot[:,:-1,:]-joint_end_site_A_withroot[:,1:,:])/scale_A - (joint_end_site_B_withroot[:,:-1,:]-joint_end_site_B_withroot[:,1:,:])/scale_B)**2).mean()
+        #             loss_contact = 0
+        #             loss_height_contact = 0
+        #     else:
+        #         loss_relative_temporal = 0
+        #         loss_contact = 0
+        #         loss_height_contact = 0
+        # else:
+        #     loss_relative_temporal = 0
+        #     loss_contact = 0
+        #     loss_height_contact = 0
 
-        return {"loss_relative_to_T":loss_relative_to_T,'loss_relative_temporal':loss_relative_temporal,\
-                'loss_contact':loss_contact,'loss_relative_to_T_': (((joint_end_site_A-t_pose_end_site_A)/scale_A - (joint_end_site_B-t_pose_end_site_B)/scale_B)**2),\
-                'loss_height_contact':loss_height_contact}
+        return {"loss_relative_to_T":0,'loss_relative_temporal':0,\
+                'loss_contact':0,'loss_relative_to_T_': 0,\
+                'loss_height_contact':0}
 
 
 class PoseEachDiscriminator(nn.Module):
@@ -343,7 +344,7 @@ class Discriminator(nn.Module):
             inputs = inputs[:,:,:,1:]
         if self.velocity_virtual_node:
             inputs = inputs[:,:,:,:-1]
-        comm_features = self.comm_conv(inputs).view(-1, self.hidden_comm, self.num_joints) # to N x hidden_comm x num_joints
+        comm_features = self.comm_conv(inputs).reshape(-1, self.hidden_comm, self.num_joints) # to N x hidden_comm x num_joints
         d_poseeach = self.disc_poseeach(comm_features) # B x num_joints
         d_poseall = self.disc_poseall(comm_features) # B x 1
         d_out = {

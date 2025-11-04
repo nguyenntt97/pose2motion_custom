@@ -25,7 +25,7 @@ from data_util import *
 class AinoZooInfo:
     joint_parents_idx_full: NDArray[np.int32] # full joint parents idx
     joint_parents_idx: NDArray[np.int32]
-    joint_offsets: NDArray[np.float32] # t-pose offsets
+    joint_offsets: torch.Tensor # t-pose offsets
     end_sites: NDArray[np.int32]
     t_pose: NDArray[np.float32] # joint positions in t-pose (J, 3)
     joint_names: list[str]
@@ -36,7 +36,7 @@ class AinoZooInfo:
 @dataclass
 class ExtendedAinoZooInfo(AinoZooInfo): # extended info from AinoZooInfo
     foot_height: NDArray[np.float32] # foot height (1,)
-    legs_lengths: NDArray[np.float32] # heights (N,)
+    legs_lengths: torch.Tensor # heights (N,)
     foot_index: NDArray[np.int32] # foot joint indices
     height: float
     z_range: list[float] # z min max
@@ -55,13 +55,15 @@ class ExtendedAinoZooInfo(AinoZooInfo): # extended info from AinoZooInfo
         self.pose_virtual_val = torch.zeros((1, len(self.joint_names), 6), dtype=torch.float32)
         
         self.foot_height = self.t_pose[self.end_sites[3], 1] # y-axis is up
-        self.legs_lengths = self.get_height(self.end_sites, self.joint_parents_idx_full, self.joint_offsets)
+        self.legs_lengths = torch.from_numpy(
+            self.get_height(self.end_sites, self.joint_parents_idx_full, self.joint_offsets)
+        )
         self.foot_index = [0, 1] # TODO: check which joints are feet
         self.height = self.legs_lengths[0] + self.legs_lengths[2] # Why?
         
-        self.z_range = [np.min(self.t_pose[:, 2]), np.max(self.t_pose[:, 2])]
-        self.x_range = [np.min(self.t_pose[:, 0]), np.max(self.t_pose[:, 0])]
-        self.y_range = [np.min(self.t_pose[:, 1]), np.max(self.t_pose[:, 1])]
+        self.z_range = [torch.min(self.t_pose[:, 2]), torch.max(self.t_pose[:, 2])]
+        self.x_range = [torch.min(self.t_pose[:, 0]), torch.max(self.t_pose[:, 0])]
+        self.y_range = [torch.min(self.t_pose[:, 1]), torch.max(self.t_pose[:, 1])]
         
     def get_height(self, end_list,parent_list,offset):
         height_list = []
@@ -72,7 +74,7 @@ class ExtendedAinoZooInfo(AinoZooInfo): # extended info from AinoZooInfo
                 height += np.dot(offset[p],offset[p])**0.5
                 p = parent_list[p]
             height_list.append(height)
-        return height_list
+        return np.array(height_list, dtype=np.float32)
 
 class AinoZoo(torch.utils.data.Dataset):
     def __init__(self, dataset_path: Path, class_names: list[str],
@@ -124,7 +126,6 @@ class AinoZoo(torch.utils.data.Dataset):
                 continue
             
             # bvh_files = list(sub_dir.glob("*/*.bvh"))
-            tmp = []
             subject_dirs = [d for d in sub_dir.iterdir() if d.is_dir()]
             for subject in subject_dirs:
                 subject_name = subject.name
@@ -137,6 +138,8 @@ class AinoZoo(torch.utils.data.Dataset):
                 poses = motion_data.data.clone() # *N, J*3, T)
                 N, J3, T = poses.shape
                 poses = poses.permute(0, 2, 1).reshape(-1, J3 // 3, 3) # (N*T, J, 3)
+                joint_names = bvh_file.simplified_name.copy()
+                
                 
                 if self.use_velo_virtual_node:
                     root_velo = torch.zeros_like(poses[:, 0, :]) # (N, 1, 3)
@@ -147,6 +150,7 @@ class AinoZoo(torch.utils.data.Dataset):
                     # attach as child of root
                     poses = torch.cat([poses, root_velo.unsqueeze(1)], dim=1) # (N, J+1, 3)
                     topology.append(np.array(1)) # add virtual joint as child of root
+                    joint_names.append("root_velocity_node")
                 
                 pose_virtual_index = torch.where(((torch.abs(poses[0,:] - poses[20,:])) < 1e-8).sum(axis=1) == 3) # euler angles unchanged
                 if self.use_velo_virtual_node:
@@ -157,12 +161,16 @@ class AinoZoo(torch.utils.data.Dataset):
                 info = ExtendedAinoZooInfo(
                     joint_parents_idx=topology,
                     joint_parents_idx_full=topology,
-                    joint_offsets=bvh_file.offset,
+                    joint_offsets=torch.from_numpy(bvh_file.offset),
                     end_sites=bvh_file.get_ee_id(),
-                    t_pose=AinoZoo._calc_t_pose(len(bvh_file.simplified_name), bvh_file.offset, topology),
-                    joint_names=bvh_file.simplified_name,
+                    t_pose=torch.from_numpy(
+                        AinoZoo._calc_t_pose(
+                            len(bvh_file.simplified_name), 
+                            bvh_file.offset, 
+                            topology)),
+                    joint_names=joint_names,
                     root_tr=bvh_file.anim.positions[:, 0, :],
-                    root_R=bvh_file.anim.rotations[:, 0, :],
+                    root_R=self._to_rotation_6d(torch.from_numpy(bvh_file.anim.rotations[:, [0], :])),
                     pose_virtual_index=pose_virtual_index,
                 )
                 self.infos.append(info)
@@ -241,7 +249,7 @@ class AinoZoo(torch.utils.data.Dataset):
                 
             #     self.infos.append(new_info_raw)
 
-        self.poses = einops.rearrange(torch.cat(self.poses, dim=0), 'N T J C -> N (J C) T')
+        self.poses = einops.rearrange(torch.cat(self.poses, dim=0), 'N T J C -> N J C T')
         self.total_frames = self.poses.shape[0]
         
         # windowing
